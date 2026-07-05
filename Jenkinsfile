@@ -1,6 +1,10 @@
 pipeline {
     agent any
 
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '5'))
+    }
+
     parameters {
         string(name: 'AWS_CREDENTIALS_ID', defaultValue: 'aws-terraform-prod', description: 'Jenkins AWS credentials ID with permission to manage the EC2 stack.')
         text(name: 'SSH_PUBLIC_KEY', defaultValue: '', description: 'Optional EC2 SSH public key text. If set, Jenkins does not need the SSH public key credential.')
