@@ -18,13 +18,13 @@ aws_region       = "us-east-1"
 project_name     = "terraform-ec2"
 environment      = "prod"
 ami_id           = "ami-051e483428ae60e7d"
-instance_type    = "t2.micro"
+instance_type    = "m5.xlarge"
 ssh_cidr         = "203.0.113.10/32"
 public_key_path  = "~/.ssh/id_rsa.pub"
 private_key_path = "~/.ssh/id_rsa"
 ```
 
-Make sure `public_key_path` points to an existing public key file. Set `ssh_cidr` to the public IP address allowed to connect over SSH with a `/32` suffix.
+Make sure `public_key_path` points to an existing public key file. Set `ssh_cidr` to the public IP address allowed to connect over SSH with a `/32` suffix. The default `m5.xlarge` instance type is used because the SQL Server Standard AMI is not supported on `t2.micro`.
 
 ## Deploy Locally
 

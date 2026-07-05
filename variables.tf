@@ -23,9 +23,9 @@ variable "ami_id" {
 }
 
 variable "instance_type" {
-  description = "EC2 instance type."
+  description = "EC2 instance type. SQL Server Standard AMIs require a supported instance class; t2.micro is not supported."
   type        = string
-  default     = "t2.micro"
+  default     = "m5.xlarge"
 }
 
 variable "ssh_cidr" {
