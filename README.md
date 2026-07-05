@@ -80,9 +80,9 @@ The included `Jenkinsfile` runs Terraform from Jenkins with these stages:
 1. Checkout
 2. Terraform init
 3. Terraform format check and validate
-4. Terraform plan
+4. Terraform plan or destroy plan
 5. Manual approval
-6. Terraform apply
+6. Terraform apply the saved plan
 
 Create this Jenkins credential before running the pipeline:
 
@@ -104,7 +104,10 @@ Pipeline parameters:
 | `SSH_PUBLIC_KEY` | empty | Optional EC2 SSH public key text. If set, no SSH public key credential is required |
 | `SSH_PUBLIC_KEY_CREDENTIALS_ID` | `ec2-ssh-public-key` | Jenkins secret file credential containing the public key when `SSH_PUBLIC_KEY` is empty |
 | `AWS_REGION` | `us-east-1` | AWS region for deployment |
+| `TERRAFORM_ACTION` | `apply` | Choose `apply` to create/update the stack or `destroy` to remove it |
 | `AUTO_APPROVE` | `false` | Set to `true` to skip the manual approval step |
+
+Destroy runs always require the Jenkins approval prompt, even when `AUTO_APPROVE` is `true`.
 
 The Jenkins agent must have Terraform installed and available on `PATH`.
 It must also have `curl` available so the pipeline can detect the agent's public IP and pass it to Terraform as `ssh_cidr`.

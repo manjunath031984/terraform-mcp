@@ -6,6 +6,7 @@ pipeline {
         text(name: 'SSH_PUBLIC_KEY', defaultValue: '', description: 'Optional EC2 SSH public key text. If set, Jenkins does not need the SSH public key credential.')
         string(name: 'SSH_PUBLIC_KEY_CREDENTIALS_ID', defaultValue: 'ec2-ssh-public-key', description: 'Jenkins secret file credential containing the EC2 SSH public key.')
         string(name: 'AWS_REGION', defaultValue: 'us-east-1', description: 'AWS region for the EC2 deployment.')
+        choice(name: 'TERRAFORM_ACTION', choices: ['apply', 'destroy'], description: 'Choose whether to create/update or destroy the Terraform-managed EC2 stack.')
         booleanParam(name: 'AUTO_APPROVE', defaultValue: false, description: 'Apply Terraform without a manual approval prompt.')
     }
 
@@ -44,10 +45,12 @@ pipeline {
                 withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: params.AWS_CREDENTIALS_ID]]) {
                     script {
                         def runPlan = { publicKeyPath ->
+                            def destroyFlag = params.TERRAFORM_ACTION == 'destroy' ? '-destroy' : ''
+
                             sh """
                                 CURRENT_PUBLIC_IP=\$(curl -fsS https://checkip.amazonaws.com | tr -d '\\r\\n')
 
-                                terraform plan \\
+                                terraform plan ${destroyFlag} \\
                                   -input=false \\
                                   -out=tfplan \\
                                   -var="aws_region=${params.AWS_REGION}" \\
@@ -72,14 +75,16 @@ pipeline {
 
         stage('Approve Apply') {
             when {
-                expression { return !params.AUTO_APPROVE }
+                expression { return !params.AUTO_APPROVE || params.TERRAFORM_ACTION == 'destroy' }
             }
             steps {
-                input message: 'Apply this Terraform plan and deploy the EC2 instance?', ok: 'Apply'
+                script {
+                    input message: "Apply this Terraform ${params.TERRAFORM_ACTION} plan?", ok: 'Apply'
+                }
             }
         }
 
-        stage('Terraform Apply') {
+        stage('Terraform Apply/Destroy') {
             steps {
                 withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: params.AWS_CREDENTIALS_ID]]) {
                     sh 'terraform apply -input=false -auto-approve tfplan'
