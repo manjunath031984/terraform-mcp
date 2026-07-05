@@ -2,18 +2,7 @@ data "aws_vpc" "default" {
   default = true
 }
 
-# Terraform discovers the operator's public IP during planning and uses it for SSH access only.
-data "http" "current_public_ip" {
-  url = "https://checkip.amazonaws.com"
-
-  request_headers = {
-    Accept = "text/plain"
-  }
-}
-
 locals {
-  current_public_ip = chomp(data.http.current_public_ip.response_body)
-
   common_tags = {
     Project     = var.project_name
     Environment = var.environment
@@ -35,7 +24,7 @@ module "security_group" {
   name        = "${var.project_name}-${var.environment}-sg"
   description = "Allow SSH from current public IP and web traffic from the internet."
   vpc_id      = data.aws_vpc.default.id
-  ssh_cidr    = "${local.current_public_ip}/32"
+  ssh_cidr    = var.ssh_cidr
   tags        = local.common_tags
 }
 

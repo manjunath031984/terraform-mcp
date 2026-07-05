@@ -28,6 +28,11 @@ variable "instance_type" {
   default     = "t2.micro"
 }
 
+variable "ssh_cidr" {
+  description = "CIDR block allowed to connect over SSH. Use your current public IP with a /32 suffix."
+  type        = string
+}
+
 variable "public_key_path" {
   description = "Local SSH public key file path used to create the AWS EC2 key pair."
   type        = string

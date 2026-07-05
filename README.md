@@ -19,11 +19,12 @@ project_name     = "terraform-ec2"
 environment      = "prod"
 ami_id           = "ami-051e483428ae60e7d"
 instance_type    = "t2.micro"
+ssh_cidr         = "203.0.113.10/32"
 public_key_path  = "~/.ssh/id_rsa.pub"
 private_key_path = "~/.ssh/id_rsa"
 ```
 
-Make sure `public_key_path` points to an existing public key file.
+Make sure `public_key_path` points to an existing public key file. Set `ssh_cidr` to the public IP address allowed to connect over SSH with a `/32` suffix.
 
 ## Deploy Locally
 
@@ -100,6 +101,7 @@ Pipeline parameters:
 | `AUTO_APPROVE` | `false` | Set to `true` to skip the manual approval step |
 
 The Jenkins agent must have Terraform installed and available on `PATH`.
+It must also have `curl` available so the pipeline can detect the agent's public IP and pass it to Terraform as `ssh_cidr`.
 
 ## Push to GitHub
 

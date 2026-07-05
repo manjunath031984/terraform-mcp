@@ -40,10 +40,13 @@ pipeline {
                     file(credentialsId: params.SSH_PUBLIC_KEY_CREDENTIALS_ID, variable: 'SSH_PUBLIC_KEY_FILE')
                 ]) {
                     sh '''
+                                                CURRENT_PUBLIC_IP=$(curl -fsS https://checkip.amazonaws.com | tr -d '\r\n')
+
                         terraform plan \
                           -input=false \
                           -out=tfplan \
                           -var="aws_region=${AWS_REGION}" \
+                                                    -var="ssh_cidr=${CURRENT_PUBLIC_IP}/32" \
                           -var="public_key_path=${SSH_PUBLIC_KEY_FILE}"
                     '''
                 }
