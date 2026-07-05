@@ -84,19 +84,25 @@ The included `Jenkinsfile` runs Terraform from Jenkins with these stages:
 5. Manual approval
 6. Terraform apply
 
-Create these Jenkins credentials before running the pipeline:
+Create this Jenkins credential before running the pipeline:
 
 | Credential ID | Type | Purpose |
 | --- | --- | --- |
-| `aws-credentials` | AWS credentials | AWS access key and secret key for Terraform |
-| `ec2-ssh-public-key` | Secret file | Public SSH key used to create the EC2 key pair |
+| `aws-terraform-prod` | AWS credentials | AWS access key and secret key for Terraform |
+
+For the EC2 SSH public key, either paste the public key into the `SSH_PUBLIC_KEY` build parameter or create this optional credential:
+
+| Credential ID | Type | Purpose |
+| --- | --- | --- |
+| `ec2-ssh-public-key` | Secret file | Public SSH key used to create the EC2 key pair when `SSH_PUBLIC_KEY` is empty |
 
 Pipeline parameters:
 
 | Parameter | Default | Description |
 | --- | --- | --- |
-| `AWS_CREDENTIALS_ID` | `aws-credentials` | Jenkins credential ID for AWS access |
-| `SSH_PUBLIC_KEY_CREDENTIALS_ID` | `ec2-ssh-public-key` | Jenkins secret file credential containing the public key |
+| `AWS_CREDENTIALS_ID` | `aws-terraform-prod` | Jenkins credential ID for AWS access |
+| `SSH_PUBLIC_KEY` | empty | Optional EC2 SSH public key text. If set, no SSH public key credential is required |
+| `SSH_PUBLIC_KEY_CREDENTIALS_ID` | `ec2-ssh-public-key` | Jenkins secret file credential containing the public key when `SSH_PUBLIC_KEY` is empty |
 | `AWS_REGION` | `us-east-1` | AWS region for deployment |
 | `AUTO_APPROVE` | `false` | Set to `true` to skip the manual approval step |
 
