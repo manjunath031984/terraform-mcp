@@ -1,0 +1,7 @@
+aws_region       = "us-east-1"
+project_name     = "terraform-ec2"
+environment      = "prod"
+ami_id           = "ami-051e483428ae60e7d"
+instance_type    = "t2.micro"
+public_key_path  = "~/.ssh/id_rsa.pub"
+private_key_path = "~/.ssh/id_rsa"
