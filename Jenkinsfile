@@ -53,6 +53,44 @@ pipeline {
             }
         }
 
+        stage('Terraform State Check') {
+            when {
+                expression {
+                    params.TERRAFORM_ACTION == 'destroy'
+                }
+            }
+
+            steps {
+                withCredentials([
+                    [$class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: params.AWS_CREDENTIALS_ID]
+                ]) {
+                    sh '''
+                        set +e
+                        terraform state list > tfstate_resources.txt 2> tfstate_error.txt
+                        STATE_EXIT_CODE=$?
+                        set -e
+
+                        if [ "$STATE_EXIT_CODE" -ne 0 ]; then
+                            cat tfstate_error.txt
+                            echo "Terraform destroy cannot continue because no readable Terraform state was found."
+                            echo "Restore the original terraform.tfstate, run the destroy from the Jenkins workspace that created the resources, or migrate/import the resources into a remote backend."
+                            exit 1
+                        fi
+
+                        if [ ! -s tfstate_resources.txt ]; then
+                            echo "Terraform destroy cannot continue because the current Terraform state contains no resources."
+                            echo "A destroy plan from an empty state will report: Resources: 0 added, 0 changed, 0 destroyed."
+                            exit 1
+                        fi
+
+                        echo "Terraform state resources selected for destroy:"
+                        cat tfstate_resources.txt
+                    '''
+                }
+            }
+        }
+
         stage('Terraform Plan') {
             steps {
                 withCredentials([
@@ -160,6 +198,7 @@ pipeline {
         always {
             sh '''
                 rm -f tfplan || true
+                rm -f tfstate_resources.txt tfstate_error.txt || true
                 rm -f "$SSH_PUBLIC_KEY_LOCAL_PATH" || true
             '''
         }
