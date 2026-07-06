@@ -7,7 +7,7 @@ pipeline {
 
     parameters {
         string(name: 'AWS_CREDENTIALS_ID', defaultValue: 'aws-terraform-prod', description: 'Jenkins AWS credentials ID with permission to manage the EC2 stack.')
-        text(name: 'SSH_PUBLIC_KEY', defaultValue: '', description: 'Optional EC2 SSH public key text. If set, Jenkins does not need the SSH public key credential.')
+        // text(name: 'SSH_PUBLIC_KEY', defaultValue: '', description: 'Optional EC2 SSH public key text. If set, Jenkins does not need the SSH public key credential.')
         string(name: 'SSH_PUBLIC_KEY_CREDENTIALS_ID', defaultValue: 'ec2-ssh-public-key', description: 'Jenkins secret file credential containing the EC2 SSH public key.')
         string(name: 'AWS_REGION', defaultValue: 'us-east-1', description: 'AWS region for the EC2 deployment.')
         choice(name: 'TERRAFORM_ACTION', choices: ['apply', 'destroy'], description: 'Choose whether to create/update or destroy the Terraform-managed EC2 stack.')
