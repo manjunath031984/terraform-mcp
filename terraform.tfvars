@@ -1,7 +1,7 @@
 aws_region       = "us-east-1"
 project_name     = "terraform-ec2"
 environment      = "prod"
-ami_id           = "ami-051e483428ae60e7d"
+ami_id           = "ami-0b6d9d3d33ba97d99"
 instance_type    = "t3.micro"
 ssh_cidr         = "203.0.113.10/32"
 public_key_path  = "~/.ssh/ec2-ssh-public-key.pub"
