@@ -17,6 +17,7 @@ pipeline {
     environment {
         TF_IN_AUTOMATION = 'true'
         TF_INPUT = 'false'
+        SSH_PUBLIC_KEY_LOCAL_PATH = "${WORKSPACE}/.jenkins_ec2_key.pub"
     }
 
     stages {
@@ -46,32 +47,30 @@ pipeline {
 
         stage('Terraform Plan') {
             steps {
+                script {
+                    if (params.SSH_PUBLIC_KEY?.trim()) {
+                        writeFile file: env.SSH_PUBLIC_KEY_LOCAL_PATH, text: "${params.SSH_PUBLIC_KEY.trim()}\n"
+                    } else {
+                        withCredentials([file(credentialsId: params.SSH_PUBLIC_KEY_CREDENTIALS_ID, variable: 'SSH_PUBLIC_KEY_FILE')]) {
+                            sh 'cp "$SSH_PUBLIC_KEY_FILE" "$SSH_PUBLIC_KEY_LOCAL_PATH"'
+                        }
+                    }
+                }
+
                 withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: params.AWS_CREDENTIALS_ID]]) {
                     script {
-                        def runPlan = { publicKeyPath ->
-                            def destroyFlag = params.TERRAFORM_ACTION == 'destroy' ? '-destroy' : ''
+                        def destroyFlag = params.TERRAFORM_ACTION == 'destroy' ? '-destroy' : ''
 
-                            sh """
-                                CURRENT_PUBLIC_IP=\$(curl -fsS https://checkip.amazonaws.com | tr -d '\\r\\n')
+                        sh """
+                            CURRENT_PUBLIC_IP=\$(curl -fsS https://checkip.amazonaws.com | tr -d '\\r\\n')
 
-                                terraform plan ${destroyFlag} \\
-                                  -input=false \\
-                                  -out=tfplan \\
-                                  -var="aws_region=${params.AWS_REGION}" \\
-                                  -var="ssh_cidr=\${CURRENT_PUBLIC_IP}/32" \\
-                                  -var="public_key_path=${publicKeyPath}"
-                            """
-                        }
-
-                        if (params.SSH_PUBLIC_KEY?.trim()) {
-                            def publicKeyPath = "${pwd()}/.jenkins_ec2_key.pub"
-                            writeFile file: publicKeyPath, text: "${params.SSH_PUBLIC_KEY.trim()}\n"
-                            runPlan(publicKeyPath)
-                        } else {
-                            withCredentials([file(credentialsId: params.SSH_PUBLIC_KEY_CREDENTIALS_ID, variable: 'SSH_PUBLIC_KEY_FILE')]) {
-                                runPlan(env.SSH_PUBLIC_KEY_FILE)
-                            }
-                        }
+                            terraform plan ${destroyFlag} \\
+                              -input=false \\
+                              -out=tfplan \\
+                              -var="aws_region=${params.AWS_REGION}" \\
+                              -var="ssh_cidr=\${CURRENT_PUBLIC_IP}/32" \\
+                              -var="public_key_path=${env.SSH_PUBLIC_KEY_LOCAL_PATH}"
+                        """
                     }
                 }
             }
