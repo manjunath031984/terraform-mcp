@@ -96,11 +96,4 @@ pipeline {
             }
         }
     }
-
-    post {
-        always {
-            sh 'rm -f "${WORKSPACE}/.jenkins_ec2_key.pub" || true'
-            cleanWs()
-        }
-    }
 }
