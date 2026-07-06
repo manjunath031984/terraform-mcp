@@ -16,7 +16,7 @@ pipeline {
         string(
             name: 'SSH_PUBLIC_KEY_CREDENTIALS_ID',
             defaultValue: 'ec2-ssh-public-key',
-            description: 'Jenkins Secret File Credential containing the EC2 SSH public key'
+            description: 'Jenkins Secret File Credential containing EC2 SSH public key'
         )
 
         string(
@@ -41,123 +41,76 @@ pipeline {
 
     stages {
 
-        stage('Checkout') {
-            steps {
-                checkout scm
-            }
-        }
-
         stage('Terraform Init') {
             steps {
                 sh '''
                     mkdir -p "$TF_PLUGIN_CACHE_DIR"
 
-                    terraform --version
-
                     terraform init \
-                        -input=false \
-                        -upgrade
+                      -input=false
                 '''
             }
         }
 
         stage('Terraform Plan') {
             steps {
+                withCredentials([
+                    file(credentialsId: params.SSH_PUBLIC_KEY_CREDENTIALS_ID, variable: 'SSH_PUBLIC_KEY_FILE'),
+                    [$class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: params.AWS_CREDENTIALS_ID]
+                ]) {
 
-                script {
+                    sh '''
+                        cp "$SSH_PUBLIC_KEY_FILE" "$SSH_PUBLIC_KEY_LOCAL_PATH"
 
-                    withCredentials([
-                        file(credentialsId: params.SSH_PUBLIC_KEY_CREDENTIALS_ID, variable: 'SSH_PUBLIC_KEY_FILE'),
-                        [$class: 'AmazonWebServicesCredentialsBinding',
-                         credentialsId: params.AWS_CREDENTIALS_ID]
-                    ]) {
+                        CURRENT_PUBLIC_IP=$(curl -fsS https://checkip.amazonaws.com | tr -d '\\r\\n')
 
-                        sh '''
-                            cp "$SSH_PUBLIC_KEY_FILE" "$SSH_PUBLIC_KEY_LOCAL_PATH"
+                        if [ "${TERRAFORM_ACTION}" = "destroy" ]; then
 
-                            CURRENT_PUBLIC_IP=$(curl -fsS https://checkip.amazonaws.com | tr -d '\\r\\n')
+                            terraform plan \
+                                -destroy \
+                                -input=false \
+                                -out=tfplan \
+                                -var="aws_region=${AWS_REGION}" \
+                                -var="ssh_cidr=${CURRENT_PUBLIC_IP}/32" \
+                                -var="public_key_path=${SSH_PUBLIC_KEY_LOCAL_PATH}"
 
-                            echo "Current Public IP : ${CURRENT_PUBLIC_IP}"
-                            echo "Terraform Action  : ${TERRAFORM_ACTION}"
+                        else
 
-                            if [ "${TERRAFORM_ACTION}" = "destroy" ]; then
+                            terraform plan \
+                                -input=false \
+                                -out=tfplan \
+                                -var="aws_region=${AWS_REGION}" \
+                                -var="ssh_cidr=${CURRENT_PUBLIC_IP}/32" \
+                                -var="public_key_path=${SSH_PUBLIC_KEY_LOCAL_PATH}"
 
-                                terraform plan \
-                                    -destroy \
-                                    -input=false \
-                                    -out=tfplan \
-                                    -var="aws_region=${AWS_REGION}" \
-                                    -var="ssh_cidr=${CURRENT_PUBLIC_IP}/32" \
-                                    -var="public_key_path=${SSH_PUBLIC_KEY_LOCAL_PATH}"
+                        fi
 
-                            else
-
-                                terraform plan \
-                                    -input=false \
-                                    -out=tfplan \
-                                    -var="aws_region=${AWS_REGION}" \
-                                    -var="ssh_cidr=${CURRENT_PUBLIC_IP}/32" \
-                                    -var="public_key_path=${SSH_PUBLIC_KEY_LOCAL_PATH}"
-
-                            fi
-
-                            echo ""
-                            echo "=============================="
-                            echo "Terraform Plan"
-                            echo "=============================="
-
-                            terraform show tfplan
-                        '''
-                    }
+                        terraform show tfplan
+                    '''
                 }
             }
         }
 
         stage('Manual Approval') {
             steps {
-
                 script {
-
-                    if (params.TERRAFORM_ACTION == "destroy") {
-
+                    if (params.TERRAFORM_ACTION == 'apply') {
                         input(
-                            message: "Destroy all Terraform resources?",
-                            ok: "Destroy"
+                            message: 'Approve Terraform Apply?',
+                            ok: 'Apply'
                         )
-
                     } else {
-
                         input(
-                            message: "Apply Terraform changes?",
-                            ok: "Apply"
+                            message: 'Approve Terraform Destroy?',
+                            ok: 'Destroy'
                         )
-
                     }
                 }
             }
         }
 
-        stage('Terraform Execute') {
-
-            steps {
-
-                withCredentials([
-                    [$class: 'AmazonWebServicesCredentialsBinding',
-                     credentialsId: params.AWS_CREDENTIALS_ID]
-                ]) {
-
-                    sh '''
-                        terraform apply \
-                            -input=false \
-                            -auto-approve \
-                            tfplan
-                    '''
-                }
-            }
-        }
-
-        stage('Verify') {
-
+        stage('Terraform Apply') {
             when {
                 expression {
                     params.TERRAFORM_ACTION == 'apply'
@@ -165,31 +118,50 @@ pipeline {
             }
 
             steps {
-                sh '''
-                    terraform output || true
-                '''
+                withCredentials([
+                    [$class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: params.AWS_CREDENTIALS_ID]
+                ]) {
+                    sh '''
+                        terraform apply \
+                          -input=false \
+                          -auto-approve \
+                          tfplan
+                    '''
+                }
+            }
+        }
+
+        stage('Terraform Destroy') {
+            when {
+                expression {
+                    params.TERRAFORM_ACTION == 'destroy'
+                }
+            }
+
+            steps {
+                withCredentials([
+                    [$class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: params.AWS_CREDENTIALS_ID]
+                ]) {
+                    sh '''
+                        terraform apply \
+                          -input=false \
+                          -auto-approve \
+                          tfplan
+                    '''
+                }
             }
         }
     }
 
     post {
-
         always {
-
             sh '''
-                rm -f "$SSH_PUBLIC_KEY_LOCAL_PATH" || true
                 rm -f tfplan || true
+                rm -f "$SSH_PUBLIC_KEY_LOCAL_PATH" || true
             '''
-
             cleanWs()
-        }
-
-        success {
-            echo "Terraform ${params.TERRAFORM_ACTION} completed successfully."
-        }
-
-        failure {
-            echo "Terraform ${params.TERRAFORM_ACTION} failed."
         }
     }
 }
