@@ -3,6 +3,7 @@ pipeline {
 
     options {
         buildDiscarder(logRotator(numToKeepStr: '5'))
+        disableConcurrentBuilds()
         timestamps()
     }
 
@@ -161,7 +162,6 @@ pipeline {
                 rm -f tfplan || true
                 rm -f "$SSH_PUBLIC_KEY_LOCAL_PATH" || true
             '''
-            cleanWs()
         }
     }
 }
