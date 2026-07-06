@@ -12,6 +12,9 @@ pipeline {
         string(name: 'AWS_REGION', defaultValue: 'us-east-1', description: 'AWS region for the EC2 deployment.')
         choice(name: 'TERRAFORM_ACTION', choices: ['apply', 'destroy'], description: 'Choose whether to create/update or destroy the Terraform-managed EC2 stack.')
         booleanParam(name: 'AUTO_APPROVE', defaultValue: false, description: 'Apply Terraform without a manual approval prompt.')
+        booleanParam(name: 'DELETE_ORPHANED_SECURITY_GROUP', defaultValue: false, description: 'If true, deletes an existing AWS security group (by name+VPC) not tracked in Terraform state before planning.')
+        string(name: 'ORPHANED_SG_NAME', defaultValue: 'terraform-ec2-prod-sg', description: 'Name of the security group to check/delete if DELETE_ORPHANED_SECURITY_GROUP is true.')
+        string(name: 'ORPHANED_SG_VPC_ID', defaultValue: 'vpc-07fafa65dcf62033f', description: 'VPC ID to scope the security group lookup.')
     }
 
     environment {
@@ -24,6 +27,31 @@ pipeline {
         stage('Checkout') {
             steps {
                 checkout scm
+            }
+        }
+
+        stage('Delete Orphaned Security Group') {
+            when {
+                expression { return params.DELETE_ORPHANED_SECURITY_GROUP }
+            }
+            steps {
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: params.AWS_CREDENTIALS_ID]]) {
+                    sh """
+                        SG_ID=\$(aws ec2 describe-security-groups \\
+                            --region ${params.AWS_REGION} \\
+                            --filters "Name=group-name,Values=${params.ORPHANED_SG_NAME}" "Name=vpc-id,Values=${params.ORPHANED_SG_VPC_ID}" \\
+                            --query 'SecurityGroups[0].GroupId' \\
+                            --output text)
+
+                        if [ "\$SG_ID" != "None" ] && [ -n "\$SG_ID" ]; then
+                            echo "Found orphaned security group \$SG_ID (${params.ORPHANED_SG_NAME}) — deleting..."
+                            aws ec2 delete-security-group --region ${params.AWS_REGION} --group-id "\$SG_ID"
+                            echo "Deleted \$SG_ID."
+                        else
+                            echo "No matching security group found for name=${params.ORPHANED_SG_NAME}, vpc=${params.ORPHANED_SG_VPC_ID}. Skipping."
+                        fi
+                    """
+                }
             }
         }
 
