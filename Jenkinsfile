@@ -52,7 +52,10 @@ pipeline {
                         writeFile file: env.SSH_PUBLIC_KEY_LOCAL_PATH, text: "${params.SSH_PUBLIC_KEY.trim()}\n"
                     } else {
                         withCredentials([file(credentialsId: params.SSH_PUBLIC_KEY_CREDENTIALS_ID, variable: 'SSH_PUBLIC_KEY_FILE')]) {
-                            sh 'cp "$SSH_PUBLIC_KEY_FILE" "$SSH_PUBLIC_KEY_LOCAL_PATH"'
+                            sh '''
+                                rm -f "$SSH_PUBLIC_KEY_LOCAL_PATH" 2>/dev/null || true
+                                cp "$SSH_PUBLIC_KEY_FILE" "$SSH_PUBLIC_KEY_LOCAL_PATH"
+                            '''
                         }
                     }
                 }
@@ -93,6 +96,12 @@ pipeline {
                     sh 'terraform apply -input=false -auto-approve tfplan'
                 }
             }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()
         }
     }
 }
