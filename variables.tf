@@ -13,19 +13,19 @@ variable "project_name" {
 variable "environment" {
   description = "Deployment environment tag value."
   type        = string
-  default     = "prod"
+  default     = "Dev"
 }
 
 variable "ami_id" {
   description = "Ubuntu Server 22.04 with SQL Server 2022 Standard Edition AMI ID."
   type        = string
-  default     = "ami-051e483428ae60e7d"
+  default     = "ami-0b6d9d3d33ba97d99"
 }
 
 variable "instance_type" {
   description = "EC2 instance type. SQL Server Standard AMIs require a supported instance class; t2.micro is not supported."
   type        = string
-  default     = "m5.xlarge"
+  default     = "t3.micro"
 }
 
 variable "ssh_cidr" {
