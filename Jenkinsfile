@@ -27,6 +27,18 @@ pipeline {
         )
 
         choice(
+            name: 'ENVIRONMENT',
+            choices: ['dev', 'qa', 'prod'],
+            description: 'Deployment environment'
+        )
+
+        string(
+            name: 'BACKEND_BUCKET',
+            defaultValue: '',
+            description: 'S3 bucket for Terraform remote state'
+        )
+
+        choice(
             name: 'TERRAFORM_ACTION',
             choices: ['apply', 'destroy'],
             description: 'Terraform Action'
@@ -44,48 +56,53 @@ pipeline {
 
         stage('Terraform Init') {
             steps {
-                sh '''
-                    mkdir -p "$TF_PLUGIN_CACHE_DIR"
-
-                    terraform init \
-                      -input=false
-                '''
-            }
-        }
-
-        stage('Terraform State Check') {
-            when {
-                expression {
-                    params.TERRAFORM_ACTION == 'destroy'
-                }
-            }
-
-            steps {
                 withCredentials([
                     [$class: 'AmazonWebServicesCredentialsBinding',
                     credentialsId: params.AWS_CREDENTIALS_ID]
                 ]) {
                     sh '''
-                        set +e
-                        terraform state list > tfstate_resources.txt 2> tfstate_error.txt
-                        STATE_EXIT_CODE=$?
-                        set -e
+                        mkdir -p "$TF_PLUGIN_CACHE_DIR"
 
-                        if [ "$STATE_EXIT_CODE" -ne 0 ]; then
-                            cat tfstate_error.txt
-                            echo "Terraform destroy cannot continue because no readable Terraform state was found."
-                            echo "Restore the original terraform.tfstate, run the destroy from the Jenkins workspace that created the resources, or migrate/import the resources into a remote backend."
+                        if [ -z "$BACKEND_BUCKET" ]; then
+                            echo "BACKEND_BUCKET is required."
                             exit 1
                         fi
 
-                        if [ ! -s tfstate_resources.txt ]; then
-                            echo "Terraform destroy cannot continue because the current Terraform state contains no resources."
-                            echo "A destroy plan from an empty state will report: Resources: 0 added, 0 changed, 0 destroyed."
-                            exit 1
+                        STATE_KEY="${ENVIRONMENT}/terraform.tfstate"
+
+                        if aws s3api head-bucket --bucket "$BACKEND_BUCKET" 2>/dev/null; then
+                            echo "Terraform backend bucket already exists: $BACKEND_BUCKET"
+                        else
+                            echo "Creating Terraform backend bucket: $BACKEND_BUCKET"
+
+                            if [ "$AWS_REGION" = "us-east-1" ]; then
+                                aws s3api create-bucket \
+                                  --bucket "$BACKEND_BUCKET" \
+                                  --region "$AWS_REGION"
+                            else
+                                aws s3api create-bucket \
+                                  --bucket "$BACKEND_BUCKET" \
+                                  --region "$AWS_REGION" \
+                                  --create-bucket-configuration LocationConstraint="$AWS_REGION"
+                            fi
+
+                            aws s3api wait bucket-exists --bucket "$BACKEND_BUCKET"
                         fi
 
-                        echo "Terraform state resources selected for destroy:"
-                        cat tfstate_resources.txt
+                        aws s3api put-bucket-versioning \
+                          --bucket "$BACKEND_BUCKET" \
+                          --versioning-configuration Status=Enabled
+
+                        aws s3api put-bucket-encryption \
+                          --bucket "$BACKEND_BUCKET" \
+                          --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+
+                        terraform init \
+                          -reconfigure \
+                          -backend-config="bucket=$BACKEND_BUCKET" \
+                          -backend-config="key=$STATE_KEY" \
+                          -backend-config="region=$AWS_REGION" \
+                          -backend-config="encrypt=true"
                     '''
                 }
             }
@@ -111,6 +128,7 @@ pipeline {
                                 -input=false \
                                 -out=tfplan \
                                 -var="aws_region=${AWS_REGION}" \
+                                -var="environment=${ENVIRONMENT}" \
                                 -var="ssh_cidr=${CURRENT_PUBLIC_IP}/32" \
                                 -var="public_key_path=${SSH_PUBLIC_KEY_LOCAL_PATH}"
 
@@ -120,6 +138,7 @@ pipeline {
                                 -input=false \
                                 -out=tfplan \
                                 -var="aws_region=${AWS_REGION}" \
+                                -var="environment=${ENVIRONMENT}" \
                                 -var="ssh_cidr=${CURRENT_PUBLIC_IP}/32" \
                                 -var="public_key_path=${SSH_PUBLIC_KEY_LOCAL_PATH}"
 
@@ -198,7 +217,6 @@ pipeline {
         always {
             sh '''
                 rm -f tfplan || true
-                rm -f tfstate_resources.txt tfstate_error.txt || true
                 rm -f "$SSH_PUBLIC_KEY_LOCAL_PATH" || true
             '''
         }

@@ -6,8 +6,29 @@ This repository provisions a simple AWS EC2 instance with Terraform. It creates 
 
 - Terraform `>= 1.6.0`
 - AWS credentials with permission to manage EC2, VPC security groups, and key pairs
+- AWS permissions to create and configure the S3 bucket used for Terraform remote state
 - An SSH key pair on the machine running Terraform
 - A Linux/Unix Jenkins agent if using the included `Jenkinsfile`
+
+## Terraform State Backend
+
+Terraform state is stored in an S3 remote backend declared in `backend.tf`. A single backend bucket is shared across environments, and each environment uses its own state key:
+
+| Environment | Backend key |
+| --- | --- |
+| `dev` | `dev/terraform.tfstate` |
+| `qa` | `qa/terraform.tfstate` |
+| `prod` | `prod/terraform.tfstate` |
+
+The backend is configured during initialization with these environment variables:
+
+| Variable | Description |
+| --- | --- |
+| `BACKEND_BUCKET` | S3 bucket that stores Terraform state |
+| `ENVIRONMENT` | Deployment environment used to generate `<ENVIRONMENT>/terraform.tfstate` |
+| `AWS_REGION` | AWS region for the backend bucket and provider |
+
+The Jenkins pipeline checks whether `BACKEND_BUCKET` exists before `terraform init`. If the bucket is missing, Jenkins creates it, waits for it to exist, enables versioning, and enables AES256 default server-side encryption.
 
 ## Configure Variables
 
@@ -37,7 +58,16 @@ Make sure `public_key_path` points to an existing public key file. Set `ssh_cidr
 2. Initialize Terraform:
 
    ```bash
-   terraform init
+   export BACKEND_BUCKET="your-terraform-state-bucket"
+    export ENVIRONMENT="dev"
+   export AWS_REGION="us-east-1"
+
+   terraform init \
+     -reconfigure \
+     -backend-config="bucket=$BACKEND_BUCKET" \
+       -backend-config="key=$ENVIRONMENT/terraform.tfstate" \
+     -backend-config="region=$AWS_REGION" \
+     -backend-config="encrypt=true"
    ```
 
 3. Format and validate the configuration:
@@ -78,11 +108,10 @@ terraform destroy
 The included `Jenkinsfile` runs Terraform from Jenkins with these stages:
 
 1. Checkout
-2. Terraform init
-3. Terraform format check and validate
-4. Terraform plan or destroy plan
-5. Manual approval
-6. Terraform apply the saved plan
+2. Terraform init, including S3 backend bucket check and automatic bucket setup when missing
+3. Terraform plan or destroy plan
+4. Manual approval
+5. Terraform apply the saved plan for either apply or destroy
 
 Create this Jenkins credential before running the pipeline:
 
@@ -90,27 +119,62 @@ Create this Jenkins credential before running the pipeline:
 | --- | --- | --- |
 | `aws-terraform-prod` | AWS credentials | AWS access key and secret key for Terraform |
 
-For the EC2 SSH public key, either paste the public key into the `SSH_PUBLIC_KEY` build parameter or create this optional credential:
+Create this credential for the EC2 SSH public key:
 
 | Credential ID | Type | Purpose |
 | --- | --- | --- |
-| `ec2-ssh-public-key` | Secret file | Public SSH key used to create the EC2 key pair when `SSH_PUBLIC_KEY` is empty |
+| `ec2-ssh-public-key` | Secret file | Public SSH key used to create the EC2 key pair |
 
 Pipeline parameters:
 
 | Parameter | Default | Description |
 | --- | --- | --- |
 | `AWS_CREDENTIALS_ID` | `aws-terraform-prod` | Jenkins credential ID for AWS access |
-| `SSH_PUBLIC_KEY` | empty | Optional EC2 SSH public key text. If set, no SSH public key credential is required |
-| `SSH_PUBLIC_KEY_CREDENTIALS_ID` | `ec2-ssh-public-key` | Jenkins secret file credential containing the public key when `SSH_PUBLIC_KEY` is empty |
+| `SSH_PUBLIC_KEY_CREDENTIALS_ID` | `ec2-ssh-public-key` | Jenkins secret file credential containing the public key |
 | `AWS_REGION` | `us-east-1` | AWS region for deployment |
+| `ENVIRONMENT` | `dev` | Deployment environment. Jenkins uses this to select `<ENVIRONMENT>/terraform.tfstate` and passes it to Terraform as `var.environment` |
+| `BACKEND_BUCKET` | empty | S3 bucket for Terraform remote state. This must be set before running the pipeline |
 | `TERRAFORM_ACTION` | `apply` | Choose `apply` to create/update the stack or `destroy` to remove it |
-| `AUTO_APPROVE` | `false` | Set to `true` to skip the manual approval step |
 
-Destroy runs always require the Jenkins approval prompt, even when `AUTO_APPROVE` is `true`.
+Apply and destroy both pass `-var="environment=${ENVIRONMENT}"`, create a saved `tfplan`, pause for manual approval, and then run `terraform apply -auto-approve tfplan`. Destroy uses `terraform plan -destroy` before approval, so the approved saved plan is the exact destroy operation Jenkins applies.
 
 The Jenkins agent must have Terraform installed and available on `PATH`.
-It must also have `curl` available so the pipeline can detect the agent's public IP and pass it to Terraform as `ssh_cidr`.
+It must also have the AWS CLI and `curl` available. The AWS CLI is used to check and configure the S3 backend bucket. `curl` is used to detect the agent's public IP and pass it to Terraform as `ssh_cidr`.
+
+## Required AWS IAM Permissions
+
+The Jenkins AWS credentials need permissions for the Terraform-managed EC2 resources and the S3 remote backend. At minimum, allow the required EC2, VPC, and key pair actions for this configuration, plus these S3 backend actions on the backend bucket:
+
+```json
+{
+   "Version": "2012-10-17",
+   "Statement": [
+      {
+         "Effect": "Allow",
+         "Action": [
+            "s3:CreateBucket",
+            "s3:HeadBucket",
+            "s3:GetBucketLocation",
+            "s3:GetBucketVersioning",
+            "s3:PutBucketVersioning",
+            "s3:GetEncryptionConfiguration",
+            "s3:PutEncryptionConfiguration",
+            "s3:ListBucket"
+         ],
+         "Resource": "arn:aws:s3:::your-terraform-state-bucket"
+      },
+      {
+         "Effect": "Allow",
+         "Action": [
+            "s3:GetObject",
+            "s3:PutObject",
+            "s3:DeleteObject"
+         ],
+         "Resource": "arn:aws:s3:::your-terraform-state-bucket/*/terraform.tfstate"
+      }
+   ]
+}
+```
 
 ## Push to GitHub
 
